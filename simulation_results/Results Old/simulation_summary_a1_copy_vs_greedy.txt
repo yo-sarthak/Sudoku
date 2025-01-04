@@ -1,0 +1,8 @@
+Time | Board | First Player | Second Player | Final Score
+------------------------------------------------------------
+0.1 | empty-3x3 | team05_A1_Copy | greedy_player | 2-18
+0.1 | empty-3x3 | greedy_player | team05_A1_Copy | 0-20
+0.5 | empty-3x3 | team05_A1_Copy | greedy_player | 19-1
+0.5 | empty-3x3 | greedy_player | team05_A1_Copy | 2-18
+1.0 | empty-3x3 | team05_A1_Copy | greedy_player | 17-1
+1.0 | empty-3x3 | greedy_player | team05_A1_Copy | 2-18

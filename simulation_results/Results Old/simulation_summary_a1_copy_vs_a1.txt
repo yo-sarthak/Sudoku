@@ -1,0 +1,8 @@
+Time | Board | First Player | Second Player | Final Score
+------------------------------------------------------------
+0.1 | empty-3x3 | team05_A1_Copy | team05_A1 | 2-18
+0.1 | empty-3x3 | team05_A1 | team05_A1_Copy | 1-19
+0.5 | empty-3x3 | team05_A1_Copy | team05_A1 | 10-9
+0.5 | empty-3x3 | team05_A1 | team05_A1_Copy | 2-18
+1.0 | empty-3x3 | team05_A1_Copy | team05_A1 | 12-7
+1.0 | empty-3x3 | team05_A1 | team05_A1_Copy | 2-18
