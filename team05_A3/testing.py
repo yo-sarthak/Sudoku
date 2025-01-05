@@ -1,16 +1,18 @@
-import sudoku_gym
-from sudoku_gym import env
-from sudoku_gym import PPO
+# import sudoku_gym
+from team05_A3.sudoku_gym import env
+from stable_baselines3.common.env_checker import check_env
+print(check_env(env))
+from team05_A3.sudoku_gym import PPO
 
 # Save the trained model
-model = PPO("MlpPolicy", env, verbose=1)
+model = PPO("CnnPolicy", env, verbose=1)
 model.load("sudoku_rl_agent")
 
 
 # Test the trained model
 obs, info = env.reset()
 for _ in range(1000):
-    action, _ = model.predict(obs, deterministic=True)
+    action, _ = model.predict(obs, deterministic=False)
     print("HELLO LOOK HERE")
     print("Action is: ", action)
     print("New action is: ", action)
