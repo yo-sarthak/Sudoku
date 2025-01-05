@@ -1,31 +1,24 @@
 from sb3_contrib import MaskablePPO
 from sb3_contrib.common.maskable.utils import get_action_masks
-from sudoku import Sudoku
-import random
 from competitive_sudoku.sudoku import GameState, Move, SudokuBoard, TabooMove, \
     SudokuSettings, allowed_squares
 import copy
-# import competitive_sudoku.sudokuai
 import numpy as np
 import gymnasium as gym
 from gymnasium import spaces
 from stable_baselines3 import PPO
 from typing import Optional
-
-import torch as th
-import torch.nn as nn
-from stable_baselines3.common.torch_layers import BaseFeaturesExtractor
-from stable_baselines3.common.vec_env import DummyVecEnv, VecNormalize
+from typing import List
+from team05_A3.SudokuSolver.solver import solve_sudoku
 
 
-print("Hello")
+# print("Hello")
 
 class SudokuEnv(gym.Env):
     
     def __init__(self, m, n):
         
         super(SudokuEnv, self).__init__()
-        
         initial_board = SudokuBoard(m, n)
         allowed_squares1, allowed_squares2 = allowed_squares(initial_board, playmode='rows')
         self.game_state = GameState(initial_board=initial_board, allowed_squares1=allowed_squares1, occupied_squares1=[], allowed_squares2=allowed_squares2, occupied_squares2=[])
@@ -73,8 +66,12 @@ class SudokuEnv(gym.Env):
     
     def reset(self, seed: Optional[int] = None, options: Optional[dict] = None):
 
-        print("Final game state before reset is: ")
-        print(self.game_state)
+        # print("Final game state before reset is: ")
+        '''calculcate filled% of board before reseting it'''
+        perc = (len(self.game_state.occupied_squares()) / self.game_state.board.N**2) * 100
+        print("Percentage filled is: ", perc, "%")
+        print(self.game_state.board)
+        print(self.game_state.scores)
         
         initial_board = SudokuBoard(self.game_state.board.m, self.game_state.board.n)
         allowed_squares1, allowed_squares2 = allowed_squares(initial_board, playmode='rows')
@@ -113,6 +110,7 @@ class SudokuEnv(gym.Env):
         else:
             move = self.convert_to_move(action)
             reward = self.add_to_game_state(move)
+            reward += 0.2
 
         # print(self.game_state)
         # print(f"{self.done = }")
@@ -187,19 +185,118 @@ class SudokuEnv(gym.Env):
                     if value not in row_values + col_values + block_values:
                         moves.append(Move(i, value))
 
-        if len(self.game_state.occupied_squares()) > 16:
-            moves_solvable = []
-            for move in moves:
-                board_copy = copy.deepcopy(self.board)
-                board_copy[move.square[0], move.square[1]] = move.value
-                board_copy = board_copy.tolist()
-                sudoku = Sudoku(self.game_state.board.m, self.game_state.board.n, board=board_copy)
-                if sudoku.solve():
-                    moves_solvable.append(move)
-            # return moves
-            return moves_solvable
+        
+        # if len(self.game_state.occupied_squares()) > 16:
+        #     moves_solvable = []
+        #     for move in moves:
+        #         board_copy = copy.deepcopy(self.board)
+        #         print("Initial Board is: ")
+        #         print(board_copy)
+        #         board_copy[move.square[0], move.square[1]] = move.value
+        #         print("New board is: ")
+        #         print(board_copy)
 
+        #         '''Solving Sudoku'''
+        #         '''
+        #         flattened_string = ''.join(map(str, board_copy.flatten()))
+        #         puzzle   = '400009200000010080005400006004200001050030060700005300500007600090060000002800007'
+        #         grid1 = str2grid(flattened_string)
+        #         grid2 = str2grid(puzzle)
+        #         string1 = grid2str(grid1)
+        #         print("String is: ", string1)
+        #         print(grid1)
+        #         print("\n")
+        #         # print(grid2)
+        #         print("Type is: ", type(grid1))
+        #         solution_set, done, info = solve_sudoku(grid2)
+        #         print("Sudoku Solver")
+        #         print(solution_set)
+        #         '''
+                
+
+        #         # print("Checking move, board copy is: ")
+        #         # print(board_copy)
+        #         # if solve_sudoku(board_copy):
+        #         moves_solvable.append(move)
+        #     # return moves
+        #     return moves_solvable
+        
         return moves
+    
+    def split(self, num_envs):
+        # Return num_envs copies of the environment
+        return [SudokuEnv() for _ in range(num_envs)]
+    
+def unflatten(arr: List[int], n=9):
+    grid = []
+    for i in range(0, len(arr), n):
+        grid.append(arr[i:i+n])
+    return grid
+
+def str2arr(string: str, blank:str = '.'):
+    arr = []
+    end = string.find('-')
+    end = len(string) if end == -1 else end
+    for c in string[0:end]:
+        if c == blank:
+            arr.append(0)
+        else:
+            arr.append(int(c))
+    return arr  # [int(c) for c in string]
+
+def str2grid(string: str) -> List[List[int]]:
+    return unflatten(str2arr(string))
+
+def grid2str(grid: List[List[int]]) -> str:
+    return arr2str(flatten(grid))
+
+def flatten(grid: List[List[int]]):
+    arr = []
+    for row in grid:
+        arr.extend(row)
+    return arr
+
+def arr2str(arr: List[int]):
+    string = ''
+    for digit in arr:
+        string += str(digit)
+    return string
+
+def solve_sudoku(board):
+    # Prepare bitmasks for each row, column, and 3x3 box
+    row_mask = np.zeros((9, 9), dtype=bool)
+    col_mask = np.zeros((9, 9), dtype=bool)
+    box_mask = np.zeros((9, 9), dtype=bool)
+    # Initialize the masks based on the given board
+    for r in range(9):
+        for c in range(9):
+            if board[r, c] != 0:
+                num = board[r, c] - 1
+                row_mask[r, num] = True
+                col_mask[c, num] = True
+                box_mask[(r // 3) * 3 + (c // 3), num] = True
+    # Function to perform the solve using bitmasking
+    def backtrack(cell_idx=0):
+        if cell_idx == 81:  # All cells filled
+            return True
+        r, c = divmod(cell_idx, 9)
+        if board[r, c] != 0:  # Skip filled cells
+            return backtrack(cell_idx + 1)
+        # Try numbers 1 through 9
+        for num in range(9):
+            if not row_mask[r, num] and not col_mask[c, num] and not box_mask[(r // 3) * 3 + (c // 3), num]:
+                # Place the number
+                board[r, c] = num + 1
+                row_mask[r, num] = col_mask[c, num] = box_mask[(r // 3) * 3 + (c // 3), num] = True
+                # Recurse to the next cell
+                if backtrack(cell_idx + 1):
+                    return True
+                # Backtrack
+                board[r, c] = 0
+                row_mask[r, num] = col_mask[c, num] = box_mask[(r // 3) * 3 + (c // 3), num] = False
+        return False
+    # Start backtracking from the first empty cell
+    return backtrack()
         
     
     '''
@@ -217,72 +314,7 @@ class SudokuEnv(gym.Env):
                 greedy_score = reward
                 self.add_to_game_state(move)
     '''
-        
-# Create the environment
-env = SudokuEnv(3, 3)
-
-# env = DummyVecEnv([lambda: env])
-
-# Now wrap the environment with VecNormalize, setting normalize_images=False
-# env = VecNormalize(env, norm_obs=False, norm_reward=False, normalize_images=False)
 
 
-class CustomCNN(BaseFeaturesExtractor):
-    """
-    Custom CNN feature extractor class for processing image observations.
-    
-    :param observation_space: (gym.Space)
-    :param features_dim: (int) Number of features extracted.
-        This corresponds to the number of units for the last layer.
-    """
-
-    def __init__(self, observation_space: spaces.Box, features_dim: int = 256):
-        super().__init__(observation_space, features_dim)
-        
-        # Extract the shape of the input image from observation_space
-        channels, height, width = observation_space.shape
-        
-        # Dynamically set the kernel size and number of channels based on m and n
-        self.m = 9  # Assuming m*n is height and width, and m*n is channels
-        
-        # Define CNN layers (adjust based on m and n)
-        self.cnn = nn.Sequential(
-            nn.Conv2d(channels, 32, kernel_size=self.m // 1, stride=1, padding=1),
-            nn.ReLU(),
-            nn.Conv2d(32, 64, kernel_size=self.m // 2, stride=2, padding=1),
-            nn.ReLU(),
-            nn.Flatten(),
-        )
-
-        # Compute the output size after convolution layers to determine the input size for the linear layer
-        with th.no_grad():
-            n_flatten = self.cnn(th.as_tensor(observation_space.sample()[None]).float()).shape[1]
-        
-        # Define a fully connected layer after convolutional layers
-        self.linear = nn.Sequential(
-            nn.Linear(n_flatten, features_dim), 
-            nn.ReLU()
-        )
-
-    def forward(self, observations: th.Tensor) -> th.Tensor:
-        # Pass observations through the CNN layers and then the linear layers
-        return self.linear(self.cnn(observations))
-    
-
-
-def main():
-    # Train a PPO agent
-    action_masks = get_action_masks(env)
-    # print(action_masks)
-    # print("Shape is: ", action_masks.shape)
-    policy_kwargs = dict(
-        normalize_images = True,
-    #features_extractor_class=CustomCNN,
-    #features_extractor_kwargs=dict(features_dim=128),
-    )
-    model = MaskablePPO("MlpPolicy", env, verbose=1, policy_kwargs=policy_kwargs)
-    model.learn(total_timesteps=100_000, use_masking=True)
-    model.save("sudoku_rl_agent")
-
-if __name__ == '__main__':
-    main()
+if __name__ == "__main__":
+    print('hell naw')
