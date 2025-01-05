@@ -9,7 +9,8 @@ from gymnasium import spaces
 from stable_baselines3 import PPO
 from typing import Optional
 from typing import List
-from team05_A3.SudokuSolver.solver import solve_sudoku
+from team05_A3.solver import solve_sudoku, str2grid, grid2str
+from team05_A3.Sudoku import SudokuException
 
 
 # print("Hello")
@@ -68,7 +69,8 @@ class SudokuEnv(gym.Env):
 
         # print("Final game state before reset is: ")
         '''calculcate filled% of board before reseting it'''
-        perc = (len(self.game_state.occupied_squares()) / self.game_state.board.N**2) * 100
+        num = self.game_state.board.N**2 - np.sum(self.board==0)
+        perc = (num / self.game_state.board.N**2) * 100
         print("Percentage filled is: ", perc, "%")
         print(self.game_state.board)
         print(self.game_state.scores)
@@ -115,7 +117,7 @@ class SudokuEnv(gym.Env):
         # print(self.game_state)
         # print(f"{self.done = }")
 
-        if len(self.game_state.occupied_squares()) == self.game_state.board.N**2:  # Board is full
+        if (np.sum(self.board == 0) == 0):  # Board is full
             # print("Number of occupied squares is: ", len(self.game_state.occupied_squares()))
             self.done = True
         
@@ -186,40 +188,51 @@ class SudokuEnv(gym.Env):
                         moves.append(Move(i, value))
 
         
-        # if len(self.game_state.occupied_squares()) > 16:
-        #     moves_solvable = []
-        #     for move in moves:
-        #         board_copy = copy.deepcopy(self.board)
-        #         print("Initial Board is: ")
-        #         print(board_copy)
-        #         board_copy[move.square[0], move.square[1]] = move.value
-        #         print("New board is: ")
-        #         print(board_copy)
-
-        #         '''Solving Sudoku'''
-        #         '''
-        #         flattened_string = ''.join(map(str, board_copy.flatten()))
-        #         puzzle   = '400009200000010080005400006004200001050030060700005300500007600090060000002800007'
-        #         grid1 = str2grid(flattened_string)
-        #         grid2 = str2grid(puzzle)
-        #         string1 = grid2str(grid1)
-        #         print("String is: ", string1)
-        #         print(grid1)
-        #         print("\n")
-        #         # print(grid2)
-        #         print("Type is: ", type(grid1))
-        #         solution_set, done, info = solve_sudoku(grid2)
-        #         print("Sudoku Solver")
-        #         print(solution_set)
-        #         '''
+        num = self.game_state.board.N**2 - np.sum(self.board == 0)
+        if num > 23:
+            moves_solvable = []
+            for move in moves:
                 
+                board_copy = copy.deepcopy(self.board)
+                # print("Initial Board is: ")
+                # print(board_copy)
+                board_copy[move.square[0], move.square[1]] = move.value
+                # print("New board is: ")
+                # print(board_copy)
 
-        #         # print("Checking move, board copy is: ")
-        #         # print(board_copy)
-        #         # if solve_sudoku(board_copy):
-        #         moves_solvable.append(move)
-        #     # return moves
-        #     return moves_solvable
+                '''Solving Sudoku'''
+                
+                flattened_string = ''.join(map(str, board_copy.flatten()))
+                # puzzle   = '400009200000010080005400006004200001050030060700005300500007600090060000002800007'
+                grid1 = str2grid(flattened_string)
+                # grid2 = str2grid(puzzle)
+                # string1 = grid2str(grid1)
+                # print("String is: ", string1)
+                # print(grid1)
+                # print("\n")
+                # print(grid2)
+                # print("Type is: ", type(grid1))
+                grid_tuple = tuple(tuple(inner_list) for inner_list in grid1)
+                # print(grid_tuple)
+                check = 0       # Checking current move in legal moves
+                
+                try:
+                    solution_set, done, info = solve_sudoku(grid_tuple)
+                    if(len(solution_set) == 0):
+                        check = 1
+                except SudokuException as e:                    
+                    check = 1
+
+                # print("Sudoku Solver")
+                if(check == 0):
+                    moves_solvable.append(move)
+
+                # print("Checking move, board copy is: ")
+                # print(board_copy)
+                # if solve_sudoku(board_copy):
+                moves_solvable.append(move)
+            # return moves
+            return moves_solvable
         
         return moves
     
@@ -227,41 +240,42 @@ class SudokuEnv(gym.Env):
         # Return num_envs copies of the environment
         return [SudokuEnv() for _ in range(num_envs)]
     
-def unflatten(arr: List[int], n=9):
-    grid = []
-    for i in range(0, len(arr), n):
-        grid.append(arr[i:i+n])
-    return grid
+# def unflatten(arr: List[int], n=9):
+#     grid = []
+#     for i in range(0, len(arr), n):
+#         grid.append(arr[i:i+n])
+#     return grid
 
-def str2arr(string: str, blank:str = '.'):
-    arr = []
-    end = string.find('-')
-    end = len(string) if end == -1 else end
-    for c in string[0:end]:
-        if c == blank:
-            arr.append(0)
-        else:
-            arr.append(int(c))
-    return arr  # [int(c) for c in string]
+# def str2arr(string: str, blank:str = '.'):
+#     arr = []
+#     end = string.find('-')
+#     end = len(string) if end == -1 else end
+#     for c in string[0:end]:
+#         if c == blank:
+#             arr.append(0)
+#         else:
+#             arr.append(int(c))
+#     return arr  # [int(c) for c in string]
 
-def str2grid(string: str) -> List[List[int]]:
-    return unflatten(str2arr(string))
+# def str2grid(string: str) -> List[List[int]]:
+#     return unflatten(str2arr(string))
 
-def grid2str(grid: List[List[int]]) -> str:
-    return arr2str(flatten(grid))
+# def grid2str(grid: List[List[int]]) -> str:
+#     return arr2str(flatten(grid))
 
-def flatten(grid: List[List[int]]):
-    arr = []
-    for row in grid:
-        arr.extend(row)
-    return arr
+# def flatten(grid: List[List[int]]):
+#     arr = []
+#     for row in grid:
+#         arr.extend(row)
+#     return arr
 
-def arr2str(arr: List[int]):
-    string = ''
-    for digit in arr:
-        string += str(digit)
-    return string
+# def arr2str(arr: List[int]):
+#     string = ''
+#     for digit in arr:
+#         string += str(digit)
+#     return string
 
+'''
 def solve_sudoku(board):
     # Prepare bitmasks for each row, column, and 3x3 box
     row_mask = np.zeros((9, 9), dtype=bool)
@@ -299,7 +313,7 @@ def solve_sudoku(board):
     return backtrack()
         
     
-    '''
+
     # Random move fallback
     def move_opposing_player(self):
         if self.get_legal_moves():

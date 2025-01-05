@@ -1,18 +1,18 @@
 from sb3_contrib import MaskablePPO
-from sb3_contrib.common.maskable.utils import get_action_masks
+# from sb3_contrib.common.maskable.utils import get_action_masks
 
-import gymnasium as gym
+# import gymnasium as gym
 from gymnasium import spaces
 
-from stable_baselines3.common.vec_env import SubprocVecEnv
+# from stable_baselines3.common.vec_env import SubprocVecEnv
 from stable_baselines3.common.env_util import make_vec_env
 
 import torch as th
 import torch.nn as nn
 from stable_baselines3.common.torch_layers import BaseFeaturesExtractor
-from stable_baselines3.common.vec_env import DummyVecEnv, VecNormalize
+# from stable_baselines3.common.vec_env import DummyVecEnv, VecNormalize
 from team05_A3.sudoku_gym import SudokuEnv
-from team05_A3.SudokuSolver import solver
+# from team05_A3.SudokuSolver import solver
 
 
 # env = DummyVecEnv([lambda: env])
@@ -73,9 +73,9 @@ env = make_vec_env(lambda: SudokuEnv(3,3), n_envs=4)
 # print("Shape is: ", action_masks.shape)
 policy_kwargs = dict(
     normalize_images = True,
-    #features_extractor_class=CustomCNN,
-    #features_extractor_kwargs=dict(features_dim=128),
+    features_extractor_class=CustomCNN,
+    features_extractor_kwargs=dict(features_dim=128),
     )
-model = MaskablePPO("MlpPolicy", env=env, verbose=1, policy_kwargs=policy_kwargs)
+model = MaskablePPO("CnnPolicy", env=env, verbose=1, policy_kwargs=policy_kwargs)
 model.learn(total_timesteps=25_000, use_masking=True)
 model.save("sudoku_rl_agent")
