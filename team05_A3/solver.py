@@ -88,7 +88,7 @@ def solve_sudoku_brute(grid: List[List[int]]):
     return grid, solved, info
 
 @lru_cache(maxsize=None)
-def solve_sudoku(grid_tuple: tuple[tuple[int]], verbose=True, all_solutions=True, **kwargs):
+def solve_sudoku(grid_tuple: tuple[tuple[int]], verbose=False, all_solutions=True, **kwargs):
     """
     idea based on https://dev.to/aspittel/how-i-finally-wrote-a-sudoku-solver-177g
     Try each step until failure, and repeat:

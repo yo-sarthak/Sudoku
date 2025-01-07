@@ -1,4 +1,5 @@
 from sb3_contrib import MaskablePPO
+from datetime import datetime
 # from sb3_contrib.common.maskable.utils import get_action_masks
 
 # import gymnasium as gym
@@ -13,6 +14,8 @@ from stable_baselines3.common.torch_layers import BaseFeaturesExtractor
 # from stable_baselines3.common.vec_env import DummyVecEnv, VecNormalize
 from team05_A3.sudoku_gym import SudokuEnv
 # from team05_A3.SudokuSolver import solver
+from team05_A3.sudoku_gym import TensorboardCallback
+from sb3_contrib.common.maskable.callbacks import MaskableEvalCallback
 
 
 # env = DummyVecEnv([lambda: env])
@@ -35,15 +38,16 @@ class CustomCNN(BaseFeaturesExtractor):
         
         # Extract the shape of the input image from observation_space
         channels, height, width = observation_space.shape
+        print(observation_space.shape)
         
         # Dynamically set the kernel size and number of channels based on m and n
-        self.m = 9  # Assuming m*n is height and width, and m*n is channels
-        
+        self.m = M
+        self.n = N # Assuming m*n is height and width, and m*n is channels
         # Define CNN layers (adjust based on m and n)
         self.cnn = nn.Sequential(
-            nn.Conv2d(channels, 32, kernel_size=self.m // 1, stride=1, padding=1),
+            nn.Conv2d(self.m * self.n, self.m * self.n, kernel_size=(self.m, self.n), stride=self.m, padding=0),
             nn.ReLU(),
-            nn.Conv2d(32, 64, kernel_size=self.m // 2, stride=2, padding=1),
+            nn.Conv2d(self.m * self.n , self.m * self.n, kernel_size=(1, 1), stride=1, padding=0),
             nn.ReLU(),
             nn.Flatten(),
         )
@@ -63,10 +67,33 @@ class CustomCNN(BaseFeaturesExtractor):
         return self.linear(self.cnn(observations))
     
 # Create the environment
+M = 3
+N = 3
 
-env = make_vec_env(lambda: SudokuEnv(3,3), n_envs=4)
 
- # Train a PPO agent
+env = make_vec_env(lambda: SudokuEnv(M,N, False), n_envs=1)
+
+eval_env = make_vec_env(lambda: SudokuEnv(M,N, True), n_envs=1)
+
+k_timesteps = 250
+total_timesteps = k_timesteps * 1000
+
+curr_time = datetime.now()
+start_of_day = curr_time.replace(hour=0, minute=0, second=0, microsecond=0)
+
+# Calculate the time difference
+seconds_from_start_of_day = int((curr_time - start_of_day).total_seconds())
+timestamp = f"{curr_time.date()}_{seconds_from_start_of_day}"
+
+model_details = f"cnn_sudoku_{M}x{N}_{k_timesteps}k_{timestamp}"
+
+
+eval_callback = MaskableEvalCallback(eval_env, best_model_save_path=f"./logs/{model_details}",
+                             log_path=f"./logs/{model_details}", eval_freq=k_timesteps, n_eval_episodes=20,
+                             deterministic=True, render=False)
+
+
+ # Train a PPO agentA
 # action_masks = get_action_masks(env)
 # print(action_masks)
 # print(action_masks)
@@ -74,8 +101,11 @@ env = make_vec_env(lambda: SudokuEnv(3,3), n_envs=4)
 policy_kwargs = dict(
     normalize_images = True,
     features_extractor_class=CustomCNN,
-    features_extractor_kwargs=dict(features_dim=128),
+    features_extractor_kwargs=dict(features_dim=3 * (M * N)**2),
+    net_arch=dict(pi=[3 * (M * N)**2, (M * N)**2], vf=[3 * (M * N)**2, (M * N)**2]),
     )
-model = MaskablePPO("CnnPolicy", env=env, verbose=1, policy_kwargs=policy_kwargs)
-model.learn(total_timesteps=25_000, use_masking=True)
-model.save("sudoku_rl_agent")
+model = MaskablePPO("CnnPolicy", env=env, verbose=1, policy_kwargs=policy_kwargs, tensorboard_log="./cnn_sudoku_tensorboard/")
+print(model.policy)
+
+model.learn(total_timesteps=250_000, use_masking=True, tb_log_name=model_details, callback=[TensorboardCallback(), eval_callback])
+model.save(model_details)

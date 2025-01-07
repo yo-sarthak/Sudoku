@@ -11,13 +11,15 @@ from typing import Optional
 from typing import List
 from team05_A3.solver import solve_sudoku, str2grid, grid2str
 from team05_A3.Sudoku import SudokuException
+from team05_A3.PythonSolverUnique import numpy_to_sudoku_format, SudokuPuzzle, depth_first_solve
+from stable_baselines3.common.callbacks import BaseCallback
 
 
 # print("Hello")
 
 class SudokuEnv(gym.Env):
     
-    def __init__(self, m, n):
+    def __init__(self, m, n, eval_env: bool = False):
         
         super(SudokuEnv, self).__init__()
         initial_board = SudokuBoard(m, n)
@@ -29,8 +31,20 @@ class SudokuEnv(gym.Env):
         self.action_space = spaces.Discrete(1 + (m*n * m*n * m*n))
         
         self.observation_space = spaces.Box(low=0, high=1, shape=(m*n, m*n, m*n), dtype=np.uint8)
-        
+        self.rewards = [0,0]
+        self.infos = {}
+        self.win = 0
+        self.eval_env = eval_env
         self.done = False
+        self.get_logables()
+
+    def get_logables(self):
+        self.infos = {}
+        self.infos['player1_score'], self.infos['player2_score']= self.game_state.scores
+        self.infos['done'] = self.done
+        self.infos['fill_percentage'] = (1 - (np.sum(self.board == 0) / self.game_state.board.N**2)) * 100
+        self.infos['reward_1'] = self.rewards[0]
+        self.infos['reward_2'] = self.rewards[1]
     
     def convert_to_move(self, action):
         action_adjusted = action - 1
@@ -67,17 +81,24 @@ class SudokuEnv(gym.Env):
     
     def reset(self, seed: Optional[int] = None, options: Optional[dict] = None):
 
+        self.get_logables()
+        # print("Reset player is: ", self.game_state.current_player)
         # print("Final game state before reset is: ")
         '''calculcate filled% of board before reseting it'''
         num = self.game_state.board.N**2 - np.sum(self.board==0)
         perc = (num / self.game_state.board.N**2) * 100
-        print("Percentage filled is: ", perc, "%")
-        print(self.game_state.board)
-        print(self.game_state.scores)
+        
+        if self.eval_env == False:
+            print("Percentage filled is: ", perc, "%")
+            print(self.game_state.board)
+            print(self.game_state.scores)
         
         initial_board = SudokuBoard(self.game_state.board.m, self.game_state.board.n)
         allowed_squares1, allowed_squares2 = allowed_squares(initial_board, playmode='rows')
         self.game_state = GameState(initial_board=initial_board, allowed_squares1=allowed_squares1, occupied_squares1=[], allowed_squares2=allowed_squares2, occupied_squares2=[])
+
+        self.win = 0
+        self.rewards = [0,0]
         
         self.board = np.zeros((self.game_state.board.N, self.game_state.board.N), dtype=int)
         self.done = False
@@ -85,7 +106,7 @@ class SudokuEnv(gym.Env):
     
     def action_masks(self):
         
-        action_mask_interim = np.full((self.game_state.board.N, self.game_state.board.N, self.game_state.board.N, 1), False)
+        action_mask_interim = np.full((self.game_state.board.N, self.game_state.board.N, self.game_state.board.N), False)
         # print("Getting legal moves: ")
         for move in self.get_legal_moves():
             # print(move)
@@ -99,27 +120,59 @@ class SudokuEnv(gym.Env):
         return action_mask_interim
     
     def step(self, action):
+
+        self.get_logables()
+
         # print('hell naw')
-        
         # print("Action is: ", action)
         # print("Move is: ", move)
+        # print("Current player is: ", self.game_state.current_player)
+        
+        '''Game State Encoded Reward'''
 
-        if action == 0:
-            reward = -5
-            self.game_state.current_player = 3 - self.game_state.current_player
-            if not self.get_legal_moves():
+        reward = 0
+        
+        if (np.sum(self.board == 0) != 0):
+            if action == 0:
+
+                self.game_state.current_player = 3 - self.game_state.current_player
+                if not self.get_legal_moves():
+                    reward -= 20
+                    self.done = True
+                self.game_state.current_player = 3 - self.game_state.current_player
+
+            else:
+                move = self.convert_to_move(action)
+                self.add_to_game_state(move)
+        
+            reward += (self.game_state.scores[self.game_state.current_player - 1] - self.game_state.scores[2 - self.game_state.current_player]) / 10
+
+        # Board is full
+        if (np.sum(self.board == 0) == 0):
+            
+            # Game is tied
+            if self.game_state.scores[0] == self.game_state.scores[1]:
                 self.done = True
-        else:
-            move = self.convert_to_move(action)
-            reward = self.add_to_game_state(move)
-            reward += 0.2
+            
+            # Rewards are updated to reflect win
+            else:
+                if self.win < 2:    # Winner/loser scores are not updated
 
-        # print(self.game_state)
-        # print(f"{self.done = }")
+                    winner = self.game_state.scores.index(max(self.game_state.scores)) + 1
+                    # diff = abs(self.game_state.scores[self.game_state.current_player - 1] - self.game_state.scores[2 - self.game_state.current_player])
 
-        if (np.sum(self.board == 0) == 0):  # Board is full
-            # print("Number of occupied squares is: ", len(self.game_state.occupied_squares()))
-            self.done = True
+                    if winner == self.game_state.current_player:
+                        reward += 2 * self.game_state.scores[winner - 1]
+                        self.win += 1
+                    else:
+                        reward -= 2 * self.game_state.scores[2 - winner]
+                        self.win += 1
+            
+                else:
+                    self.done = True
+
+        self.rewards[self.game_state.current_player - 1] += reward
+        self.game_state.current_player = 3 - self.game_state.current_player
         
         return self._get_obs(), reward, self.done, False, {}
     
@@ -148,8 +201,8 @@ class SudokuEnv(gym.Env):
         self.game_state.moves.append(move)
         self.game_state.occupied_squares().append(move.square)
         self.board[move.square[0], move.square[1]] = move.value
-        self.game_state.current_player = 3 - self.game_state.current_player  # Toggle between player 1 and 2
-        return reward
+        # self.game_state.current_player = 3 - self.game_state.current_player  # Toggle between player 1 and 2
+        # return reward
     
     def evaluate_score(self, move):
 
@@ -189,7 +242,8 @@ class SudokuEnv(gym.Env):
 
         
         num = self.game_state.board.N**2 - np.sum(self.board == 0)
-        if num > 23:
+        if num > 16:
+
             moves_solvable = []
             for move in moves:
                 
@@ -197,40 +251,51 @@ class SudokuEnv(gym.Env):
                 # print("Initial Board is: ")
                 # print(board_copy)
                 board_copy[move.square[0], move.square[1]] = move.value
+                # board_copy = board_copy.tolist()
                 # print("New board is: ")
                 # print(board_copy)
 
                 '''Solving Sudoku'''
-                
-                flattened_string = ''.join(map(str, board_copy.flatten()))
-                # puzzle   = '400009200000010080005400006004200001050030060700005300500007600090060000002800007'
-                grid1 = str2grid(flattened_string)
-                # grid2 = str2grid(puzzle)
-                # string1 = grid2str(grid1)
-                # print("String is: ", string1)
-                # print(grid1)
-                # print("\n")
-                # print(grid2)
-                # print("Type is: ", type(grid1))
-                grid_tuple = tuple(tuple(inner_list) for inner_list in grid1)
-                # print(grid_tuple)
-                check = 0       # Checking current move in legal moves
-                
-                try:
-                    solution_set, done, info = solve_sudoku(grid_tuple)
-                    if(len(solution_set) == 0):
-                        check = 1
-                except SudokuException as e:                    
-                    check = 1
 
-                # print("Sudoku Solver")
-                if(check == 0):
+                N = len(board_copy)
+                symbol_set = {str(i) for i in range(1, N + 1)}
+                board_copy = numpy_to_sudoku_format(board_copy)
+                puzzle = SudokuPuzzle(n = N, symbols=board_copy, symbol_set=symbol_set)
+                solution = depth_first_solve(puzzle)
+                
+                if solution:
                     moves_solvable.append(move)
 
-                # print("Checking move, board copy is: ")
-                # print(board_copy)
-                # if solve_sudoku(board_copy):
-                moves_solvable.append(move)
+
+                # flattened_string = ''.join(map(str, board_copy.flatten()))
+                # # puzzle   = '400009200000010080005400006004200001050030060700005300500007600090060000002800007'
+                # grid1 = str2grid(flattened_string)
+                # # grid2 = str2grid(puzzle)
+                # # string1 = grid2str(grid1)
+                # # print("String is: ", string1)
+                # # print(grid1)
+                # # print("\n")
+                # # print(grid2)
+                # # print("Type is: ", type(grid1))
+                # grid_tuple = tuple(tuple(inner_list) for inner_list in grid1)
+                # # print(grid_tuple)
+                # check = 0       # Checking current move in legal moves
+                
+                # try:
+                #     solution_set, done, info = solve_sudoku(grid_tuple)
+                #     if(len(solution_set) == 0):
+                #         check = 1
+                # except SudokuException as e:                    
+                #     check = 1
+
+                # # print("Sudoku Solver")
+                # if(check == 0):
+                #     moves_solvable.append(move)
+
+                # # print("Checking move, board copy is: ")
+                # # print(board_copy)
+                # # if solve_sudoku(board_copy):
+                # moves_solvable.append(move)
             # return moves
             return moves_solvable
         
@@ -329,6 +394,80 @@ def solve_sudoku(board):
                 self.add_to_game_state(move)
     '''
 
+# def is_valid_check(board, num, row, col):
+#     # Check the row
+#     if num in board[row, :]:
+#         return False
+
+#     # Check the column
+#     if num in board[:, col]:
+#         return False
+
+#     # Check the 3x3 box
+#     start_row, start_col = 3 * (row // 3), 3 * (col // 3)
+#     if num in board[start_row:start_row + 3, start_col:start_col + 3]:
+#         return False
+
+#     return True
+
+# def solve_sudoku_check(board):
+#     # Find an empty cell (represented by 0)
+#     for row in range(9):
+#         for col in range(9):
+#             if board[row, col] == 0:
+#                 # Try numbers from 1 to 9
+#                 for num in range(1, 10):
+#                     if is_valid_check(board, num, row, col):
+#                         board[row, col] = num
+                        
+#                         # Recursively solve the rest of the board
+#                         if solve_sudoku_check(board):
+#                             return True
+                        
+#                         # If it doesn't work, backtrack and try the next number
+#                         board[row, col] = 0
+                        
+#                 return False  # If no valid number is found, return False
+
+#     return True  # All cells are filled correctly
+
+class TensorboardCallback(BaseCallback):
+    """
+    Custom callback for plotting additional values in tensorboard.
+    """
+
+    def __init__(self, verbose=0):
+        super().__init__(verbose)
+        self.game_scores = [0, 0]
+
+    def _on_step(self) -> bool:
+        # Log scalar value (here a random variable)
+        # game_scores = [0,0]
+        # game_scores[0] += self.locals['game_state.scores'][0]
+        # game_scores[1] += self.locals['game_state.scores'][1]
+        # a = self.logger.record("player1_score", self.training_env.get_attr("infos")[0]['player1_score'])
+        # b = self.logger.record("player2_score", self.training_env.get_attr("infos")[0]['player2_score'])
+        
+        if (self.training_env.get_attr("infos")[0]['done']):
+            
+            # game_scores_average = game_scores
+            # game_scores_average[0] = game_scores_average[0]/1000
+            # game_scores_average[1] = game_scores_average[1]/1000
+            # self.logger.dump(self.num_timesteps)
+            # game_scores = self.locals['game_state.scores'][0]/1000
+            # game_scores = self.locals
+            # print(self.training_env.get_attr("infos")[0])
+            # print(self.locals['infos']['player2_score'])
+            # print(self.training_env.get_attr("infos")[0]['player1_score'])
+            print(self.locals['rewards'])
+            self.logger.record("player1_score", self.training_env.get_attr("infos")[0]['player1_score'])
+            self.logger.record("player2_score", self.training_env.get_attr("infos")[0]['player2_score'])
+            self.logger.record("fill percentage", self.training_env.get_attr("infos")[0]['fill_percentage'])
+            self.logger.record("reward_1", self.training_env.get_attr("infos")[0]['reward_1'])
+            self.logger.record("reward_2", self.training_env.get_attr("infos")[0]['reward_2'])
+            
+            self.logger.dump(self.num_timesteps)
+        return True
 
 if __name__ == "__main__":
     print('hell naw')
